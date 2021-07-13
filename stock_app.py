@@ -65,6 +65,13 @@ train = new_data[:987]
 valid = new_data[987:]
 valid['Prediction'] = closing_price
 
+# Moving Avenger
+df_nse['EMA_9'] = df_nse['Close'].ewm(9).mean().shift()
+df_nse['SMA_5'] = df_nse['Close'].rolling(5).mean().shift()
+df_nse['SMA_10'] = df_nse['Close'].rolling(10).mean().shift()
+df_nse['SMA_15'] = df_nse['Close'].rolling(15).mean().shift()
+df_nse['SMA_30'] = df_nse['Close'].rolling(30).mean().shift()
+
 df = pd.read_csv("./data/stock_data.csv")
 
 app.layout = html.Div([
@@ -96,7 +103,28 @@ app.layout = html.Div([
                         ],
                         "layout": go.Layout(xaxis={'title': 'Date'}, yaxis={'title': 'Closing Rate'})
                     }
-                )
+                ),
+                html.H2("Moving Avenger", style={"textAlign": "center"}),
+                dcc.Graph(
+                    id="Predicted Data MA",
+                    figure={
+                        "data": [
+                            go.Scatter(
+                                x=df_nse['Date'], y=df_nse['EMA_9'], name='EMA 9'),
+                            go.Scatter(
+                                x=df_nse['Date'], y=df_nse['SMA_5'], name='SMA 5'),
+                            go.Scatter(
+                                x=df_nse['Date'], y=df_nse['SMA_10'], name='SMA 10'),
+                            go.Scatter(
+                                x=df_nse['Date'], y=df_nse['SMA_15'], name='SMA 15'),
+                            go.Scatter(
+                                x=df_nse['Date'], y=df_nse['SMA_30'], name='SMA 30'),
+                            go.Scatter(
+                                x=df_nse['Date'], y=df_nse['Close'], name='Close', opacity=0.2)
+                        ]
+                    }
+
+                ),
             ])
         ]),
         dcc.Tab(label='Facebook Stock Data', children=[
