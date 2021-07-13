@@ -65,6 +65,18 @@ train = new_data[:987]
 valid = new_data[987:]
 valid['Prediction'] = closing_price
 
+# Rate of Change (ROC)
+
+
+def rate_of_change(data, n):
+    N = data['Close'].diff(n)
+    D = data['Close'].shift(n)
+    ROC = pd.Series(N/D, name='ROC')
+    return ROC
+
+
+df_nse['ROC'] = rate_of_change(df_nse, 5)
+
 # Moving Avenger
 df_nse['EMA_9'] = df_nse['Close'].ewm(9).mean().shift()
 df_nse['SMA_5'] = df_nse['Close'].rolling(5).mean().shift()
@@ -88,7 +100,6 @@ app.layout = html.Div([
                         ],
                         "layout": go.Layout(xaxis={'title': 'Date'}, yaxis={'title': 'Close Price'})
                     }
-
                 ),
                 html.H2("LSTM Predicted closing price",
                         style={"textAlign": "center"}),
@@ -102,6 +113,20 @@ app.layout = html.Div([
                                        y=valid["Prediction"], name='Valid')
                         ],
                         "layout": go.Layout(xaxis={'title': 'Date'}, yaxis={'title': 'Closing Rate'})
+                    }
+                ),
+                html.H2("Rate of Change", style={"textAlign": "center"}),
+                dcc.Graph(
+                    id="Predicted Data ROC",
+                    figure={
+                        "data": [
+                            go.Scatter(
+                                x=df_nse['Date'], y=df_nse['ROC'], name='ROC')
+                        ],
+                        "layout":go.Layout(
+                            xaxis={'title': 'Date'},
+                            yaxis={'title': 'ROC values'}
+                        )
                     }
                 ),
                 html.H2("Moving Avenger", style={"textAlign": "center"}),
@@ -123,7 +148,6 @@ app.layout = html.Div([
                                 x=df_nse['Date'], y=df_nse['Close'], name='Close', opacity=0.2)
                         ]
                     }
-
                 ),
             ])
         ]),
