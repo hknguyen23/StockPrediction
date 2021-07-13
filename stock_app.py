@@ -64,6 +64,18 @@ train = new_data[:987]
 valid = new_data[987:]
 valid['Prediction'] = closing_price
 
+# Rate of Change (ROC)
+
+
+def rate_of_change(data, n):
+    N = data['Close'].diff(n)
+    D = data['Close'].shift(n)
+    ROC = pd.Series(N/D, name='ROC')
+    return ROC
+
+
+df_nse['ROC'] = rate_of_change(df_nse, 5)
+
 # Moving Avenger
 df_nse['EMA_9'] = df_nse['Close'].ewm(9).mean().shift()
 df_nse['SMA_5'] = df_nse['Close'].rolling(5).mean().shift()
