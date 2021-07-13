@@ -69,10 +69,4 @@ X_test = np.reshape(X_test, (X_test.shape[0], X_test.shape[1], 1))
 predicted_closing_price = lstm_model.predict(X_test)
 predicted_closing_price = scaler.inverse_transform(predicted_closing_price)
 
-lstm_model.save("saved_model.h5")
-
-train_data = new_dataset[:987]
-valid_data = new_dataset[987:]
-valid_data['Predictions'] = predicted_closing_price
-plt.plot(train_data["Close"])
-plt.plot(valid_data[['Close', "Predictions"]])
+lstm_model.save("lstm_model.h5")
