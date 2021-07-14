@@ -6,13 +6,16 @@ import plotly.graph_objs as go
 from keras.models import load_model
 from sklearn.preprocessing import MinMaxScaler
 import numpy as np
+import xgboost as xgb
+from xgboost import plot_importance, plot_tree
+from sklearn.model_selection import GridSearchCV
 
 app = dash.Dash()
 server = app.server
 
 scaler = MinMaxScaler(feature_range=(0, 1))
 
-df_nse = pd.read_csv("NSE-TATA.csv")
+df_nse = pd.read_csv("./data/NSE-TATA.csv")
 
 df_nse["Date"] = pd.to_datetime(df_nse['Date'], format="%Y-%m-%d")
 df_nse.index = df_nse['Date']
@@ -83,17 +86,77 @@ df_nse['SMA_10'] = df_nse['Close'].rolling(10).mean().shift()
 df_nse['SMA_15'] = df_nse['Close'].rolling(15).mean().shift()
 df_nse['SMA_30'] = df_nse['Close'].rolling(30).mean().shift()
 
+# RSI
+
+
+def relative_strength_idx(df, n):
+    close = df['Close']
+    delta = close.diff()
+    delta = delta[1:]
+    pricesUp = delta.copy()
+    pricesDown = delta.copy()
+    pricesUp[pricesUp < 0] = 0
+    pricesDown[pricesDown > 0] = 0
+    rollUp = pricesUp.rolling(n).mean()
+    rollDown = pricesDown.abs().rolling(n).mean()
+    rs = rollUp / rollDown
+    rsi = 100.0 - (100.0 / (1.0 + rs))
+    return rsi
+
+
+df_nse['RSI'] = relative_strength_idx(df_nse, 14).fillna(0)
+
+df = pd.read_csv("NSE-TATA.csv")
+df.head()
+df["Date"] = pd.to_datetime(df['Date'])
+df.index = df['Date']
+
+# Moving Avenger
+df['EMA_9'] = df['Close'].ewm(9).mean().shift()
+df['SMA_10'] = df['Close'].rolling(10).mean().shift()
+df['SMA_30'] = df['Close'].rolling(30).mean().shift()
+
+# RSI
+df['RSI'] = relative_strength_idx(df, 14).fillna(0)
+
 # Rate of Change (ROC)
+df['ROC'] = rate_of_change(df, 5)
 
+test_size = 0.15
+valid_size = 0.15
 
-def rate_of_change(data, n):
-    N = data['Close'].diff(n)
-    D = data['Close'].shift(n)
-    ROC = pd.Series(N/D, name='ROC')
-    return ROC
+test_split_idx = int(df.shape[0] * (1-test_size))
+valid_split_idx = int(df.shape[0] * (1-(valid_size+test_size)))
 
+train_df = df.iloc[:valid_split_idx].copy()
+valid_df = df.iloc[valid_split_idx+1:test_split_idx].copy()
+test_df = df.iloc[test_split_idx+1:].copy()
 
-df_nse['ROC'] = rate_of_change(df_nse, 5)
+drop_cols = ['Date', 'Open', 'Low', 'High', 'Last',
+             'Total Trade Quantity', 'Turnover (Lacs)']
+
+train_df = train_df.drop(drop_cols, 1)
+valid_df = valid_df.drop(drop_cols, 1)
+test_df = test_df.drop(drop_cols, 1)
+
+y_train = train_df['Close'].copy()
+X_train = train_df.drop(['Close'], 1)
+
+y_valid = valid_df['Close'].copy()
+X_valid = valid_df.drop(['Close'], 1)
+
+y_test = test_df['Close'].copy()
+X_test = test_df.drop(['Close'], 1)
+
+# XGBoost
+eval_set = [(X_train, y_train), (X_valid, y_valid)]
+model_xgb = xgb.XGBRegressor()
+model_xgb.load_model('xgboost_model.h5')
+model_xgb.fit(X_train, y_train, eval_set=eval_set, verbose=False)
+
+y_pred = model_xgb.predict(X_test)
+predicted_prices = df.iloc[test_split_idx+1:].copy()
+predicted_prices['Close'] = y_pred
 
 app.layout = html.Div([
     html.H1("Stock Price Analysis Dashboard", style={"textAlign": "center"}),
@@ -158,10 +221,46 @@ app.layout = html.Div([
                         ]
                     }
                 ),
+                html.H2("Relative Strength Index",
+                        style={"textAlign": "center"}),
+                dcc.Graph(
+                    id="Predicted Data RSI",
+                    figure={
+                        "data": [
+                            go.Scatter(
+                                x=df_nse.Date, y=df_nse.RSI, name='RSI')
+                        ]
+                    }
+                )
             ])
         ]),
         dcc.Tab(label='XGBoost', children=[
-
+            html.Div([
+                html.H2("XGBoost", style={"textAlign": "center"}),
+                dcc.Graph(
+                    id="XGBoost",
+                    figure={
+                        "data": [
+                            go.Scatter(
+                                x=predicted_prices.Date,
+                                y=y_test,
+                                name='Truth',
+                                marker_color='LightSkyBlue'
+                            ),
+                            go.Scatter(
+                                x=predicted_prices.Date,
+                                y=y_pred,
+                                name='Prediction',
+                                marker_color='MediumPurple'
+                            )
+                        ],
+                        "layout":go.Layout(
+                            xaxis={'title': 'Date'},
+                            yaxis={'title': 'Close Price'}
+                        )
+                    }
+                )
+            ])
         ])
     ])
 ])
