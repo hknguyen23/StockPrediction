@@ -3,7 +3,7 @@ import xgboost as xgb
 from xgboost import plot_importance
 from sklearn.model_selection import GridSearchCV
 
-df = pd.read_csv("./data/NSE-TATA.csv")
+df = pd.read_csv("./data/abc.csv")
 df.head()
 df["Date"] = pd.to_datetime(df['Date'])
 df.index = df['Date']
@@ -55,8 +55,9 @@ train_df = df.iloc[:valid_split_idx].copy()
 valid_df = df.iloc[valid_split_idx+1:test_split_idx].copy()
 test_df = df.iloc[test_split_idx+1:].copy()
 
-drop_cols = ['Date', 'Open', 'Low', 'High', 'Last',
-             'Total Trade Quantity', 'Turnover (Lacs)']
+#drop_cols = ['Date', 'Open', 'Low', 'High', 'Last',
+#             'Total Trade Quantity', 'Turnover (Lacs)']
+drop_cols = ['Date', 'Volume', 'Open', 'Low', 'High', 'OpenInt']
 
 train_df = train_df.drop(drop_cols, 1)
 valid_df = valid_df.drop(drop_cols, 1)
@@ -76,7 +77,8 @@ X_train.info()
 parameters = {
     'n_estimators': [100],
     'learning_rate': [0.1],
-    'max_depth': [8],
+    'max_depth': [12],
+    'gamma': [0.01]
 }
 
 eval_set = [(X_train, y_train), (X_valid, y_valid)]
