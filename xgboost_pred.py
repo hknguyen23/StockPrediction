@@ -45,6 +45,18 @@ def rate_of_change(data, n):
 
 df['ROC'] = rate_of_change(df, 5)
 
+# Bollinger Bands
+def bollinger_bands(data, n):
+    MA = data['Close'].rolling(n).mean()
+    SD = data['Close'].rolling(n).std()
+    data['UpperBB'] = MA + (2 * SD) 
+    data['LowerBB'] = MA - (2 * SD)
+    return data
+
+BB = bollinger_bands(df, 50)
+df['UpperBB'] = BB['UpperBB']
+df['LowerBB'] = BB['LowerBB']
+
 test_size = 0.15
 valid_size = 0.15
 
@@ -55,8 +67,6 @@ train_df = df.iloc[:valid_split_idx].copy()
 valid_df = df.iloc[valid_split_idx+1:test_split_idx].copy()
 test_df = df.iloc[test_split_idx+1:].copy()
 
-#drop_cols = ['Date', 'Open', 'Low', 'High', 'Last',
-#             'Total Trade Quantity', 'Turnover (Lacs)']
 drop_cols = ['Date', 'Volume', 'Open', 'Low', 'High', 'OpenInt']
 
 train_df = train_df.drop(drop_cols, 1)

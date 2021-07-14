@@ -13,14 +13,15 @@ server = app.server
 
 scaler = MinMaxScaler(feature_range=(0, 1))
 
-df_nse = pd.read_csv("./data/abc.csv")
+df_lstm = pd.read_csv("./data/abc.csv")
 
-df_nse["Date"] = pd.to_datetime(df_nse['Date'])
-df_nse.index = df_nse['Date']
+df_lstm["Date"] = pd.to_datetime(df_lstm['Date'])
+df_lstm.index = df_lstm['Date']
 
-data = df_nse.sort_index(ascending=True, axis=0)
-df_nse = data
-new_data = pd.DataFrame(index=range(0, len(df_nse)), columns=['Date', 'Close'])
+data = df_lstm.sort_index(ascending=True, axis=0)
+df_lstm = data
+new_data = pd.DataFrame(index=range(0, len(df_lstm)),
+                        columns=['Date', 'Close'])
 
 for i in range(0, len(data)):
     new_data["Date"][i] = data['Date'][i]
@@ -31,7 +32,7 @@ new_data.drop("Date", axis=1, inplace=True)
 
 dataset = new_data.values
 
-train_index = int(len(df_nse) * 0.7)
+train_index = int(len(df_lstm) * 0.7)
 
 train = dataset[:train_index, :]
 valid = dataset[train_index+1:, :]
@@ -78,14 +79,14 @@ def rate_of_change(data, n):
     return ROC
 
 
-df_nse['ROC'] = rate_of_change(df_nse, 5)
+df_lstm['ROC'] = rate_of_change(df_lstm, 5)
 
 # Moving Avenger
-df_nse['EMA_9'] = df_nse['Close'].ewm(9).mean().shift()
-df_nse['SMA_5'] = df_nse['Close'].rolling(5).mean().shift()
-df_nse['SMA_10'] = df_nse['Close'].rolling(10).mean().shift()
-df_nse['SMA_15'] = df_nse['Close'].rolling(15).mean().shift()
-df_nse['SMA_30'] = df_nse['Close'].rolling(30).mean().shift()
+df_lstm['EMA_9'] = df_lstm['Close'].ewm(9).mean().shift()
+df_lstm['SMA_5'] = df_lstm['Close'].rolling(5).mean().shift()
+df_lstm['SMA_10'] = df_lstm['Close'].rolling(10).mean().shift()
+df_lstm['SMA_15'] = df_lstm['Close'].rolling(15).mean().shift()
+df_lstm['SMA_30'] = df_lstm['Close'].rolling(30).mean().shift()
 
 # RSI
 
@@ -105,34 +106,51 @@ def relative_strength_idx(df, n):
     return rsi
 
 
-df_nse['RSI'] = relative_strength_idx(df_nse, 14).fillna(0)
+df_lstm['RSI'] = relative_strength_idx(df_lstm, 14).fillna(0)
 
-df = pd.read_csv("./data/abc.csv")
-df.head()
-df["Date"] = pd.to_datetime(df['Date'])
-df.index = df['Date']
-df = df.sort_index(ascending=True, axis=0)
+# Bollinger Bands 
+def bollinger_bands(data, n):
+    MA = data['Close'].rolling(n).mean()
+    SD = data['Close'].rolling(n).std()
+    data['UpperBB'] = MA + (2 * SD) 
+    data['LowerBB'] = MA - (2 * SD)
+    return data
+
+BB_lstm = bollinger_bands(df_lstm, 50)
+df_lstm['UpperBB'] = BB_lstm['UpperBB']
+df_lstm['LowerBB'] = BB_lstm['LowerBB']
+
+df_xgb = pd.read_csv("./data/abc.csv")
+df_xgb.head()
+df_xgb["Date"] = pd.to_datetime(df_xgb['Date'])
+df_xgb.index = df_xgb['Date']
+df_xgb = df_xgb.sort_index(ascending=True, axis=0)
 
 # Moving Avenger
-df['EMA_9'] = df['Close'].ewm(9).mean().shift()
-df['SMA_10'] = df['Close'].rolling(10).mean().shift()
-df['SMA_30'] = df['Close'].rolling(30).mean().shift()
+df_xgb['EMA_9'] = df_xgb['Close'].ewm(9).mean().shift()
+df_xgb['SMA_10'] = df_xgb['Close'].rolling(10).mean().shift()
+df_xgb['SMA_30'] = df_xgb['Close'].rolling(30).mean().shift()
 
 # RSI
-df['RSI'] = relative_strength_idx(df, 14).fillna(0)
+df_xgb['RSI'] = relative_strength_idx(df_xgb, 14).fillna(0)
 
 # Rate of Change (ROC)
-df['ROC'] = rate_of_change(df, 5)
+df_xgb['ROC'] = rate_of_change(df_xgb, 5)
+
+# Bollinger Bands 
+BB_xgb = bollinger_bands(df_xgb, 50)
+df_xgb['UpperBB'] = BB_xgb['UpperBB']
+df_xgb['LowerBB'] = BB_xgb['LowerBB']
 
 test_size = 0.15
 valid_size = 0.15
 
-test_split_idx = int(df.shape[0] * (1-test_size))
-valid_split_idx = int(df.shape[0] * (1-(valid_size+test_size)))
+test_split_idx = int(df_xgb.shape[0] * (1-test_size))
+valid_split_idx = int(df_xgb.shape[0] * (1-(valid_size+test_size)))
 
-train_df = df.iloc[:valid_split_idx].copy()
-valid_df = df.iloc[valid_split_idx+1:test_split_idx].copy()
-test_df = df.iloc[test_split_idx+1:].copy()
+train_df = df_xgb.iloc[:valid_split_idx].copy()
+valid_df = df_xgb.iloc[valid_split_idx+1:test_split_idx].copy()
+test_df = df_xgb.iloc[test_split_idx+1:].copy()
 
 drop_cols = ['Date', 'Volume', 'Open', 'Low', 'High', 'OpenInt']
 
@@ -156,7 +174,7 @@ model_xgb.load_model('xgboost_model.h5')
 model_xgb.fit(X_train, y_train, eval_set=eval_set, verbose=False)
 
 y_pred = model_xgb.predict(X_test)
-predicted_prices = df.iloc[test_split_idx+1:].copy()
+predicted_prices = df_xgb.iloc[test_split_idx+1:].copy()
 predicted_prices['Close'] = y_pred
 
 app.layout = html.Div([
@@ -170,8 +188,8 @@ app.layout = html.Div([
                     id="Predicted Data LSTM",
                     figure={
                         "data": [
-                            go.Scatter(x=df_nse['Date'],
-                                       y=df_nse["Close"], name='Truth'),
+                            go.Scatter(x=df_lstm['Date'],
+                                       y=df_lstm["Close"], name='Truth'),
                             go.Scatter(x=valid.index,
                                        y=valid["Prediction"], name='Prediction')
                         ],
@@ -184,7 +202,7 @@ app.layout = html.Div([
                     figure={
                         "data": [
                             go.Scatter(
-                                x=df_nse['Date'], y=df_nse['ROC'], name='ROC')
+                                x=df_lstm['Date'], y=df_lstm['ROC'], name='ROC')
                         ],
                         "layout":go.Layout(
                             xaxis={'title': 'Date'},
@@ -198,17 +216,17 @@ app.layout = html.Div([
                     figure={
                         "data": [
                             go.Scatter(
-                                x=df_nse['Date'], y=df_nse['EMA_9'], name='EMA 9'),
+                                x=df_lstm['Date'], y=df_lstm['EMA_9'], name='EMA 9'),
                             go.Scatter(
-                                x=df_nse['Date'], y=df_nse['SMA_5'], name='SMA 5'),
+                                x=df_lstm['Date'], y=df_lstm['SMA_5'], name='SMA 5'),
                             go.Scatter(
-                                x=df_nse['Date'], y=df_nse['SMA_10'], name='SMA 10'),
+                                x=df_lstm['Date'], y=df_lstm['SMA_10'], name='SMA 10'),
                             go.Scatter(
-                                x=df_nse['Date'], y=df_nse['SMA_15'], name='SMA 15'),
+                                x=df_lstm['Date'], y=df_lstm['SMA_15'], name='SMA 15'),
                             go.Scatter(
-                                x=df_nse['Date'], y=df_nse['SMA_30'], name='SMA 30'),
+                                x=df_lstm['Date'], y=df_lstm['SMA_30'], name='SMA 30'),
                             go.Scatter(
-                                x=df_nse['Date'], y=df_nse['Close'], name='Close', opacity=0.2)
+                                x=df_lstm['Date'], y=df_lstm['Close'], name='Close', opacity=0.2)
                         ]
                     }
                 ),
@@ -219,7 +237,22 @@ app.layout = html.Div([
                     figure={
                         "data": [
                             go.Scatter(
-                                x=df_nse['Date'], y=df_nse['RSI'], name='RSI')
+                                x=df_lstm['Date'], y=df_lstm['RSI'], name='RSI')
+                        ]
+                    }
+                ),
+                html.H2("Bollinger Bands",
+                        style={"textAlign": "center"}),
+                dcc.Graph(
+                    id="Predicted Data BB",
+                    figure={
+                        "data": [
+                            go.Scatter(
+                                x=df_lstm['Date'], y=df_lstm['Close'], name='Close'),
+                            go.Scatter(
+                                x=df_lstm['Date'], y=df_lstm['UpperBB'], name='UpperBB'),
+                            go.Scatter(
+                                x=df_lstm['Date'], y=df_lstm['LowerBB'], name='LowerBB')
                         ]
                     }
                 )
@@ -233,8 +266,8 @@ app.layout = html.Div([
                     figure={
                         "data": [
                             go.Scatter(
-                                x=df['Date'],
-                                y=df['Close'],
+                                x=df_xgb['Date'],
+                                y=df_xgb['Close'],
                                 name='Truth',
                                 marker_color='LightSkyBlue'
                             ),
