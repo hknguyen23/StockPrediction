@@ -7,20 +7,19 @@ from keras.models import load_model
 from sklearn.preprocessing import MinMaxScaler
 import numpy as np
 import xgboost as xgb
-from xgboost import plot_importance, plot_tree
-from sklearn.model_selection import GridSearchCV
 
 app = dash.Dash()
 server = app.server
 
 scaler = MinMaxScaler(feature_range=(0, 1))
 
-df_nse = pd.read_csv("./data/NSE-TATA.csv")
+df_nse = pd.read_csv("./data/abc.csv")
 
-df_nse["Date"] = pd.to_datetime(df_nse['Date'], format="%Y-%m-%d")
+df_nse["Date"] = pd.to_datetime(df_nse['Date'])
 df_nse.index = df_nse['Date']
 
 data = df_nse.sort_index(ascending=True, axis=0)
+df_nse = data
 new_data = pd.DataFrame(index=range(0, len(df_nse)), columns=['Date', 'Close'])
 
 for i in range(0, len(data)):
@@ -32,8 +31,10 @@ new_data.drop("Date", axis=1, inplace=True)
 
 dataset = new_data.values
 
-train = dataset[0:987, :]
-valid = dataset[987:, :]
+train_index = int(len(df_nse) * 0.7)
+
+train = dataset[:train_index, :]
+valid = dataset[train_index+1:, :]
 
 scaler = MinMaxScaler(feature_range=(0, 1))
 scaled_data = scaler.fit_transform(dataset)
@@ -63,8 +64,8 @@ X_test = np.reshape(X_test, (X_test.shape[0], X_test.shape[1], 1))
 closing_price = model.predict(X_test)
 closing_price = scaler.inverse_transform(closing_price)
 
-train = new_data[:987]
-valid = new_data[987:]
+train = new_data[:train_index]
+valid = new_data[train_index+1:]
 valid['Prediction'] = closing_price
 
 # Rate of Change (ROC)
@@ -106,10 +107,11 @@ def relative_strength_idx(df, n):
 
 df_nse['RSI'] = relative_strength_idx(df_nse, 14).fillna(0)
 
-df = pd.read_csv("NSE-TATA.csv")
+df = pd.read_csv("./data/abc.csv")
 df.head()
 df["Date"] = pd.to_datetime(df['Date'])
 df.index = df['Date']
+df = df.sort_index(ascending=True, axis=0)
 
 # Moving Avenger
 df['EMA_9'] = df['Close'].ewm(9).mean().shift()
@@ -132,8 +134,7 @@ train_df = df.iloc[:valid_split_idx].copy()
 valid_df = df.iloc[valid_split_idx+1:test_split_idx].copy()
 test_df = df.iloc[test_split_idx+1:].copy()
 
-drop_cols = ['Date', 'Open', 'Low', 'High', 'Last',
-             'Total Trade Quantity', 'Turnover (Lacs)']
+drop_cols = ['Date', 'Volume', 'Open', 'Low', 'High', 'OpenInt']
 
 train_df = train_df.drop(drop_cols, 1)
 valid_df = valid_df.drop(drop_cols, 1)
@@ -161,28 +162,18 @@ predicted_prices['Close'] = y_pred
 app.layout = html.Div([
     html.H1("Stock Price Analysis Dashboard", style={"textAlign": "center"}),
     dcc.Tabs(id="tabs", children=[
-        dcc.Tab(label='NSE-TATAGLOBAL Stock Data', children=[
+        dcc.Tab(label='LSTM', children=[
             html.Div([
-                html.H2("Actual closing price", style={"textAlign": "center"}),
-                dcc.Graph(
-                    id="Actual Data",
-                    figure={
-                        "data": [
-                            go.Scatter(x=df_nse['Date'], y=df_nse['Close'])
-                        ],
-                        "layout": go.Layout(xaxis={'title': 'Date'}, yaxis={'title': 'Close Price'})
-                    }
-                ),
                 html.H2("LSTM Predicted closing price",
                         style={"textAlign": "center"}),
                 dcc.Graph(
                     id="Predicted Data LSTM",
                     figure={
                         "data": [
-                            go.Scatter(x=train.index,
-                                       y=train["Close"], name='Train'),
+                            go.Scatter(x=df_nse['Date'],
+                                       y=df_nse["Close"], name='Truth'),
                             go.Scatter(x=valid.index,
-                                       y=valid["Prediction"], name='Valid')
+                                       y=valid["Prediction"], name='Prediction')
                         ],
                         "layout": go.Layout(xaxis={'title': 'Date'}, yaxis={'title': 'Closing Rate'})
                     }
@@ -228,7 +219,7 @@ app.layout = html.Div([
                     figure={
                         "data": [
                             go.Scatter(
-                                x=df_nse.Date, y=df_nse.RSI, name='RSI')
+                                x=df_nse['Date'], y=df_nse['RSI'], name='RSI')
                         ]
                     }
                 )
@@ -242,13 +233,13 @@ app.layout = html.Div([
                     figure={
                         "data": [
                             go.Scatter(
-                                x=predicted_prices.Date,
-                                y=y_test,
+                                x=df['Date'],
+                                y=df['Close'],
                                 name='Truth',
                                 marker_color='LightSkyBlue'
                             ),
                             go.Scatter(
-                                x=predicted_prices.Date,
+                                x=predicted_prices['Date'],
                                 y=y_pred,
                                 name='Prediction',
                                 marker_color='MediumPurple'
