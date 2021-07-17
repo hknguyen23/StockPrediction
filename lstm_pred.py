@@ -1,64 +1,66 @@
+import os
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
+
 from keras.layers import LSTM, Dropout, Dense
 from sklearn.preprocessing import MinMaxScaler
 from keras.models import Sequential
 import pandas as pd
 import numpy as np
-import matplotlib.pyplot as plt
-from matplotlib.pylab import rcParams
 
-rcParams['figure.figsize'] = 20, 10
+df_lstm = pd.read_csv("./data/abc.csv")
 
-df = pd.read_csv("./data/abc.csv")
-df.head()
+df_lstm['Date'] = pd.to_datetime(df_lstm['Date'])
+df_lstm.index = df_lstm['Date']
 
-df["Date"] = pd.to_datetime(df.Date)
-df.index = df['Date']
-
-plt.figure(figsize=(16, 8))
-plt.plot(df["Close"], label='Close Price history')
-
-data = df.sort_index(ascending=True, axis=0)
-new_dataset = pd.DataFrame(index=range(0, len(df)), columns=['Date', 'Close'])
+data = df_lstm.sort_index(ascending=True, axis=0)
+df_lstm = data
+new_data = pd.DataFrame(index=range(0, len(df_lstm)),
+                        columns=['Date', 'Close'])
 
 for i in range(0, len(data)):
-    new_dataset["Date"][i] = data['Date'][i]
-    new_dataset["Close"][i] = data["Close"][i]
+    new_data['Date'][i] = data['Date'][i]
+    new_data['Close'][i] = data['Close'][i]
+
+new_data.index = new_data['Date']
+new_data.drop('Date', axis=1, inplace=True)
+
+dataset = new_data.values
+
+train_index = int(len(df_lstm) * 0.7)
+train_dataset = dataset[:train_index, :]
+test_dataset = dataset[train_index:, :]
 
 scaler = MinMaxScaler(feature_range=(0, 1))
+train_dataset = scaler.fit_transform(train_dataset)
+test_dataset = scaler.transform(dataset)
 
-new_dataset.index = new_dataset['Date']
-new_dataset.drop("Date", axis=1, inplace=True)
-final_dataset = new_dataset.values
+def create_dataset(df):
+    x = []
+    y = []
+    for i in range(60, df.shape[0]):
+        x.append(df[i-60:i, 0])
+        y.append(df[i, 0])
+    x = np.array(x)
+    y = np.array(y)
+    return x,y
 
-train_index = int(len(df) * 0.7)
+x_train, y_train = create_dataset(train_dataset)
+x_test, y_test = create_dataset(test_dataset)
 
-train_data = final_dataset[:train_index, :]
-valid_data = final_dataset[train_index+1:, :]
+x_train = np.reshape(x_train, (x_train.shape[0], x_train.shape[1], 1))
+x_test = np.reshape(x_test, (x_test.shape[0], x_test.shape[1], 1))
 
-scaler = MinMaxScaler(feature_range=(0, 1))
-scaled_data = scaler.fit_transform(final_dataset)
+model = Sequential()
+model.add(LSTM(units=96, return_sequences=True, input_shape=(x_train.shape[1], 1)))
+model.add(Dropout(0.2))
+model.add(LSTM(units=96,return_sequences=True))
+model.add(Dropout(0.2))
+model.add(LSTM(units=96,return_sequences=True))
+model.add(Dropout(0.2))
+model.add(LSTM(units=96))
+model.add(Dropout(0.2))
+model.add(Dense(units=1))
 
-x_train_data, y_train_data = [], []
-
-for i in range(60, len(train_data)):
-    x_train_data.append(scaled_data[i-60:i, 0])
-    y_train_data.append(scaled_data[i, 0])
-
-x_train_data, y_train_data = np.array(x_train_data), np.array(y_train_data)
-
-x_train_data = np.reshape(
-    x_train_data, (x_train_data.shape[0], x_train_data.shape[1], 1))
-
-lstm_model = Sequential()
-lstm_model.add(LSTM(units=50, return_sequences=True,
-               input_shape=(x_train_data.shape[1], 1)))
-lstm_model.add(LSTM(units=50))
-lstm_model.add(Dense(1))
-
-inputs_data = new_dataset[len(new_dataset)-len(valid_data)-60:].values
-inputs_data = inputs_data.reshape(-1, 1)
-inputs_data = scaler.transform(inputs_data)
-
-lstm_model.compile(loss='mean_squared_error', optimizer='adam')
-lstm_model.fit(x_train_data, y_train_data, epochs=1, batch_size=1, verbose=2)
-lstm_model.save("lstm_model.h5")
+model.compile(loss='mean_squared_error', optimizer='adam')
+model.fit(x_train, y_train, epochs=1, batch_size=1)
+model.save("lstm_model.h5")

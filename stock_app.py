@@ -1,3 +1,6 @@
+import os
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
+
 import dash
 import dash_core_components as dcc
 import dash_html_components as html
@@ -11,11 +14,9 @@ import xgboost as xgb
 app = dash.Dash()
 server = app.server
 
-scaler = MinMaxScaler(feature_range=(0, 1))
-
 df_lstm = pd.read_csv("./data/abc.csv")
 
-df_lstm["Date"] = pd.to_datetime(df_lstm['Date'])
+df_lstm['Date'] = pd.to_datetime(df_lstm['Date'])
 df_lstm.index = df_lstm['Date']
 
 data = df_lstm.sort_index(ascending=True, axis=0)
@@ -24,60 +25,53 @@ new_data = pd.DataFrame(index=range(0, len(df_lstm)),
                         columns=['Date', 'Close'])
 
 for i in range(0, len(data)):
-    new_data["Date"][i] = data['Date'][i]
-    new_data["Close"][i] = data["Close"][i]
+    new_data['Date'][i] = data['Date'][i]
+    new_data['Close'][i] = data['Close'][i]
 
 new_data.index = new_data['Date']
-new_data.drop("Date", axis=1, inplace=True)
+new_data.drop('Date', axis=1, inplace=True)
 
 dataset = new_data.values
 
 train_index = int(len(df_lstm) * 0.7)
-
-train = dataset[:train_index, :]
-valid = dataset[train_index+1:, :]
+train_dataset = dataset[:train_index, :]
+test_dataset = dataset[train_index:, :]
 
 scaler = MinMaxScaler(feature_range=(0, 1))
-scaled_data = scaler.fit_transform(dataset)
+train_dataset = scaler.fit_transform(train_dataset)
+test_dataset = scaler.transform(dataset)
 
-x_train, y_train = [], []
+def create_dataset(df):
+    x = []
+    y = []
+    for i in range(60, df.shape[0]):
+        x.append(df[i-60:i, 0])
+        y.append(df[i, 0])
+    x = np.array(x)
+    y = np.array(y)
+    return x,y
 
-for i in range(60, len(train)):
-    x_train.append(scaled_data[i-60:i, 0])
-    y_train.append(scaled_data[i, 0])
-
-x_train, y_train = np.array(x_train), np.array(y_train)
+x_train, y_train = create_dataset(train_dataset)
+x_test, y_test = create_dataset(test_dataset)
 
 x_train = np.reshape(x_train, (x_train.shape[0], x_train.shape[1], 1))
+x_test = np.reshape(x_test, (x_test.shape[0], x_test.shape[1], 1))
 
 model = load_model("lstm_model.h5")
+predictions = model.predict(x_test)
+predictions = scaler.inverse_transform(predictions)
+y_test_scaled = scaler.inverse_transform(y_test.reshape(-1, 1))
 
-inputs = new_data[len(new_data)-len(valid)-60:].values
-inputs = inputs.reshape(-1, 1)
-inputs = scaler.transform(inputs)
-
-X_test = []
-for i in range(60, inputs.shape[0]):
-    X_test.append(inputs[i-60:i, 0])
-X_test = np.array(X_test)
-
-X_test = np.reshape(X_test, (X_test.shape[0], X_test.shape[1], 1))
-closing_price = model.predict(X_test)
-closing_price = scaler.inverse_transform(closing_price)
-
-train = new_data[:train_index]
-valid = new_data[train_index+1:]
-valid['Prediction'] = closing_price
+df_lstm = df_lstm.iloc[60:]
+df_lstm['Truth'] = y_test_scaled
+df_lstm['Prediction'] = predictions
 
 # Rate of Change (ROC)
-
-
 def rate_of_change(data, n):
     N = data['Close'].diff(n)
     D = data['Close'].shift(n)
     ROC = pd.Series(N/D, name='ROC')
     return ROC
-
 
 df_lstm['ROC'] = rate_of_change(df_lstm, 5)
 
@@ -89,8 +83,6 @@ df_lstm['SMA_15'] = df_lstm['Close'].rolling(15).mean().shift()
 df_lstm['SMA_30'] = df_lstm['Close'].rolling(30).mean().shift()
 
 # RSI
-
-
 def relative_strength_idx(df, n):
     close = df['Close']
     delta = close.diff()
@@ -104,7 +96,6 @@ def relative_strength_idx(df, n):
     rs = rollUp / rollDown
     rsi = 100.0 - (100.0 / (1.0 + rs))
     return rsi
-
 
 df_lstm['RSI'] = relative_strength_idx(df_lstm, 14).fillna(0)
 
@@ -142,39 +133,24 @@ BB_xgb = bollinger_bands(df_xgb, 50)
 df_xgb['UpperBB'] = BB_xgb['UpperBB']
 df_xgb['LowerBB'] = BB_xgb['LowerBB']
 
-test_size = 0.15
-valid_size = 0.15
+test_size = 0.2
 
 test_split_idx = int(df_xgb.shape[0] * (1-test_size))
-valid_split_idx = int(df_xgb.shape[0] * (1-(valid_size+test_size)))
 
-train_df = df_xgb.iloc[:valid_split_idx].copy()
-valid_df = df_xgb.iloc[valid_split_idx+1:test_split_idx].copy()
-test_df = df_xgb.iloc[test_split_idx+1:].copy()
+test_df = df_xgb.iloc[test_split_idx:].copy()
 
 drop_cols = ['Date', 'Volume', 'Open', 'Low', 'High', 'OpenInt']
 
-train_df = train_df.drop(drop_cols, 1)
-valid_df = valid_df.drop(drop_cols, 1)
 test_df = test_df.drop(drop_cols, 1)
-
-y_train = train_df['Close'].copy()
-X_train = train_df.drop(['Close'], 1)
-
-y_valid = valid_df['Close'].copy()
-X_valid = valid_df.drop(['Close'], 1)
 
 y_test = test_df['Close'].copy()
 X_test = test_df.drop(['Close'], 1)
 
 # XGBoost
-eval_set = [(X_train, y_train), (X_valid, y_valid)]
 model_xgb = xgb.XGBRegressor()
 model_xgb.load_model('xgboost_model.h5')
-model_xgb.fit(X_train, y_train, eval_set=eval_set, verbose=False)
-
 y_pred = model_xgb.predict(X_test)
-predicted_prices = df_xgb.iloc[test_split_idx+1:].copy()
+predicted_prices = df_xgb.iloc[test_split_idx:].copy()
 predicted_prices['Close'] = y_pred
 
 app.layout = html.Div([
@@ -189,9 +165,9 @@ app.layout = html.Div([
                     figure={
                         "data": [
                             go.Scatter(x=df_lstm['Date'],
-                                       y=df_lstm["Close"], name='Truth'),
-                            go.Scatter(x=valid.index,
-                                       y=valid["Prediction"], name='Prediction')
+                                       y=df_lstm['Truth'], name='Truth'),
+                            go.Scatter(x=df_lstm['Date'],
+                                       y=df_lstm['Prediction'], name='Prediction')
                         ],
                         "layout": go.Layout(xaxis={'title': 'Date'}, yaxis={'title': 'Closing Rate'})
                     }
